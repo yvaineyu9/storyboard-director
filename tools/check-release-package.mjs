@@ -7,12 +7,17 @@ const REQUIRED_FILES = [
   'app.js',
   'app.json',
   'package.json',
-  'lib/storyboard-library.js'
+  'lib/storyboard-library.js',
+  'lib/vocab.js',
+  'lib/library.js',
+  'lib/json-rescue.js'
 ];
 
 const REQUIRED_DIRS = [
   'pages',
-  'lib'
+  'lib',
+  'lib/agents',
+  'lib/renderer'
 ];
 
 const RUNTIME_ALLOWED_ROOTS = new Set([
@@ -39,7 +44,7 @@ const REQUIRED_AIXIGNORE_RULES = [
 
 const ALLOWED_PERMISSIONS = new Set(['microphone', 'network']);
 const REQUIRED_PERMISSIONS = new Set(['microphone', 'network']);
-const RUNTIME_SCAN_EXTENSIONS = new Set(['.js', '.mjs', '.ink']);
+const RUNTIME_SCAN_EXTENSIONS = new Set(['.js', '.mjs', '.ink', '.json']);
 
 function toPosix(relativePath) {
   return relativePath.split(path.sep).join('/');
@@ -426,8 +431,10 @@ export async function runReleasePackageChecks(root = process.cwd()) {
 
   {
     const before = errors.length;
-    const agentsContents = await readText(root, 'AGENTS.md');
-    validatePermissionSet('AGENTS.md', parseAgentsPermissions(agentsContents), errors, true);
+    if (await exists(root, 'AGENTS.md')) {
+      const agentsContents = await readText(root, 'AGENTS.md');
+      validatePermissionSet('AGENTS.md', parseAgentsPermissions(agentsContents), errors, true);
+    }
 
     const appPermissions = collectAppJsonPermissions(appJson);
     validatePermissionSet('app.json', appPermissions, errors, false);

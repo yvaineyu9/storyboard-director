@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -85,6 +85,46 @@ test('rejects offline bootstrap references and runtime JSON file loading', async
   assert.equal(result.ok, false);
   assert.match(result.errors.join('\n'), /tools\/bootstrap/);
   assert.match(result.errors.join('\n'), /runtime JSON\/file loading/i);
+});
+
+test('rejects missing required runtime library modules and directories', async () => {
+  const root = await createValidFixture();
+  await rm(path.join(root, 'lib/vocab.js'));
+  await rm(path.join(root, 'lib/agents'), { recursive: true });
+  await rm(path.join(root, 'lib/renderer'), { recursive: true });
+
+  const result = await runReleasePackageChecks(root);
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /lib\/vocab\.js: required file is missing/);
+  assert.match(result.errors.join('\n'), /lib\/agents\/: required directory is missing/);
+  assert.match(result.errors.join('\n'), /lib\/renderer\/: required directory is missing/);
+});
+
+test('rejects forbidden bootstrap references in package metadata', async () => {
+  const root = await createValidFixture();
+  await writeFixtureFile(root, 'package.json', JSON.stringify({
+    name: 'storyboard-director',
+    scripts: {
+      'check:release': 'node tools/check-release-package.mjs',
+      bootstrap: 'node tools/bootstrap/a0-build.js'
+    }
+  }, null, 2));
+
+  const result = await runReleasePackageChecks(root);
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /package\.json: contains forbidden tools\/bootstrap reference/);
+});
+
+test('reports missing AGENTS.md without throwing', async () => {
+  const root = await createValidFixture();
+  await rm(path.join(root, 'AGENTS.md'));
+
+  const result = await runReleasePackageChecks(root);
+
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join('\n'), /AGENTS\.md: required file is missing/);
 });
 
 test('rejects missing routes and wrong permissions', async () => {
