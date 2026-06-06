@@ -1,0 +1,7 @@
+{
+  "name": "storyboard-director",
+  "version": "0.1.0",
+  "description": "Voice-driven storyboard director agent for AIUI glasses",
+  "main": "app.js",
+  "dependencies": {}
+}
