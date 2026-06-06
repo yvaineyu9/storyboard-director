@@ -112,6 +112,16 @@ export default {
     this.onMicTap();
   },
 
+  // 平台语音唤醒入口：被唤醒后必须尽快(平台 2s 超时)开始 ASR，
+  // 否则报「Interactive InkView 未在 2 秒内开启 ASR」。这里同步启动聆听。
+  onVoiceWakeup(event) {
+    console.log('onVoiceWakeup', event && event.keyword);
+    if (this.data.phase === 'listening') {
+      return;
+    }
+    this.startListening();
+  },
+
   // 统一状态切换：写入 phase + 派生文案，再合并额外字段。
   setPhase(phase, extra) {
     const next = Object.assign({
