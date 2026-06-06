@@ -47,26 +47,24 @@ const STAGE_TEXT = {
   combine: '正在组合分镜…'
 };
 
-// 防御式地从识别结果事件里取最新转写文本与 final 标记。复用样例 extractTranscript。
-function extractTranscript(event) {
-  const results = event && event.results;
-  if (!results || !results.length) {
-    return { text: '', isFinal: false };
+// 官方 SpeechRecognition 的 result 事件（apis-ai.md）暴露 resultIndex / results / sessionId。
+// 运行时已完成识别、直接给文字——不做 Web Speech 的 alternatives（result[0]）嵌套解析。
+// 兼容 results 为：字符串 / 文本数组 / RecognitionResult({transcript|text, isFinal}) 数组。
+function readRecognizedText(event) {
+  if (!event) return { text: '', isFinal: false };
+  let r = event.results;
+  if (Array.isArray(r)) r = r.length ? r[r.length - 1] : '';
+  if (typeof r === 'string') {
+    return { text: r.trim(), isFinal: event.isFinal !== false };
   }
-  let text = '';
-  let isFinal = false;
-  const start = typeof event.resultIndex === 'number' ? event.resultIndex : 0;
-  for (let i = start; i < results.length; i++) {
-    const result = results[i];
-    const alternative = result && result[0];
-    if (alternative && alternative.transcript) {
-      text += alternative.transcript;
-    }
-    if (result && result.isFinal) {
-      isFinal = true;
-    }
+  if (r && typeof r === 'object') {
+    const raw = typeof r.transcript === 'string' ? r.transcript
+              : typeof r.text === 'string' ? r.text : '';
+    const isFinal = r.isFinal != null ? !!r.isFinal
+                  : event.isFinal != null ? !!event.isFinal : true;
+    return { text: raw.trim(), isFinal };
   }
-  return { text: text.trim(), isFinal };
+  return { text: '', isFinal: false };
 }
 
 export default {
@@ -180,7 +178,7 @@ export default {
     recognition.maxAlternatives = 1;
 
     recognition.onresult = (event) => {
-      const { text, isFinal } = extractTranscript(event);
+      const { text, isFinal } = readRecognizedText(event);
       if (text) {
         this.setData({ displayQuery: text });
       }
