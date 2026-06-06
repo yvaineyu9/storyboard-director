@@ -1,0 +1,52 @@
+# AIUI 发布包排除清单（架构设计 §8.3）
+# 每行一个排除项；上传打包前据此剔除非运行时文件。
+
+# --- 文档（PRD/架构/任务/README/模块/交接，均不进生产包）---
+# 排除全部 *.md，但保留 AGENTS.md（agent 清单，必含进包）。
+*.md
+README.md
+PRD.md
+任务拆分.md
+架构设计.md
+架构师-交接提示词.md
+模块*.md
+!AGENTS.md
+
+# --- 离线工具链（A0 引导脚本 + 中间产物，运行时不依赖）---
+tools/
+tools/bootstrap/
+
+# --- figure 生成器：仅 A0 离线用，运行时硬隔离，不进生产包（§1 / §8.2）---
+lib/figure.js
+
+# --- 测试与快照 ---
+*.test.js
+*.test.mjs
+*.spec.js
+*.spec.mjs
+_*-test.mjs
+_*-test.js
+**/__snapshots__/
+*.snap
+*.snapshot.*
+coverage/
+
+# --- 临时 / 中间产物 ---
+*.png
+*.tmp.png
+*.temp.png
+*-temp.png
+*.intermediate.json
+*.generated.json
+*.tmp.json
+*.temp.json
+
+# --- 杂项 ---
+.DS_Store
+.gitignore
+.env
+.env.*
+node_modules/
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
