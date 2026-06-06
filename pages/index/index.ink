@@ -5,7 +5,9 @@
 </script>
 
 <script setup>
-import { LanguageModel } from 'language-model';
+// 防御式全局引用：macOS demo 运行时不提供 'language-model' 模块（端侧 LLM 只在眼镜真机），
+// LanguageModel 挂在 globalThis 上。裸 import 会触发 Module not found 整页崩溃。
+const LanguageModel = (typeof globalThis !== 'undefined' && globalThis.LanguageModel) || (typeof window !== 'undefined' && window.LanguageModel) || null;
 import wx from 'wx';
 import { MAX_CLARIFY, createIntentSession, runIntent } from '../../lib/agents/intent.js';
 import { fallbackComposition, runComposition } from '../../lib/agents/composition.js';
@@ -258,11 +260,43 @@ export default {
     this.setStage('intent');
 
     try {
-      const availability = await LanguageModel.availability();
+      // 计算 LLM 是否真正可用：模块缺失（macOS demo）或 availability 非 available 时降级。
+      const useLLM = !!(LanguageModel) && (await LanguageModel.availability().catch(() => 'unavailable')) === 'available';
       if (this._runId !== runId) return;
-      if (availability !== 'available') {
-        this.setPhase('error', { isStreaming: false, errorText: 'AI 运行时暂不可用' });
-        this.disposeSession();
+
+      if (!useLLM) {
+        // 确定性兜底：无端侧 LLM 也能出分镜（启发式意图 + 兜底构图/节奏）。
+        const fallbackIntentText = (this._intentInputs || [])
+          .map((text, index) => `${index === 0 ? '初始描述' : `补充${index}`}：${text}`)
+          .join('\n');
+        const intentResult = await runIntent(fallbackIntentText, {
+          clarifyCount: this._clarifyCount || 0
+        });
+        if (this._runId !== runId) return;
+        // macOS demo 无法多轮 LLM 追问：即使 ready=false 也直接用其 intent 继续。
+        const intent = intentResult.intent;
+        this.setStage('parallel');
+        const composition = fallbackComposition(intent);
+        const rhythm = {
+          shots: buildFallbackRhythm(intent.mood, intent.shotCount),
+          source: 'fallback'
+        };
+        if (this._runId !== runId) return;
+        this.setStage('combine');
+        const board = combineStoryboard(intent, composition, rhythm);
+        this._latestFilmstripModel = board.filmstripModel;
+        this.setPhase('result', {
+          displayQuery: query,
+          markdown: board.markdown,
+          isStreaming: false,
+          errorText: '',
+          ask: '',
+          filmstripFailed: false,
+          filmstripCells: board.filmstripModel.cells,
+          guidance: board.guidance
+        });
+        this.clearConversationState();
+        this.renderFilmstrip(board.filmstripModel, runId);
         return;
       }
 
