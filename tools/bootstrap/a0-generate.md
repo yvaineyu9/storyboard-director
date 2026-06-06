@@ -23,6 +23,7 @@
 - `camera`: `fixed` 固定、`pan` 摇镜、`tilt` 俯仰、`dolly` 移镜(推/拉)、`track` 跟拍、`crane` 摇臂、`handheld` 手持、`zoom` 变焦、`aerial` 航拍、`pov` POV主观。
 - `composition`: `center`、`thirds`、`bisect`、`symmetry`、`vast`、`frame`、`leading`、`lowangle`、`topdown`、`silhouette`、`shallow`。
 - `mood`: `calm` 平静治愈、`warm` 温暖、`melancholy` 忧郁、`tense` 紧张、`epic` 史诗壮阔、`joyful` 欢快、`premium` 高级质感、`energetic` 动感。
+- `scene`: `Vlog`、`主角登场`、`产品`、`产品特写`、`人物口播`、`公路`、`关键道具`、`咖啡`、`城市`、`大厅`、`对抗`、`居家`、`山野`、`崖边`、`巷道`、`广场`、`建筑`、`开箱`、`徽章`、`心脏`、`手作`、`手部细节`、`料理`、`旅行Vlog`、`枕木桥`、`树下`、`核心物`、`桌面流程`、`桥边`、`湖面`、`演出`、`片头`、`独白`、`看台`、`礼物`、`空旷空间`、`穿越`、`窗边`、`窥视`、`等待`、`线索揭示`、`细节`、`自拍`、`自述`、`舞台`、`荒原`、`行进中`、`街头`、`表情`、`走廊`、`运动`、`追逐`、`逆光奔跑`、`通道`、`道具`、`遗迹`、`采访`、`镜面`、`门框`、`门缝`、`集体互动`、`雪山`、`静物`、`风光`、`骑行`、`黄昏`。
 
 ### PRD §5：T1-T8 风格原型
 
@@ -58,7 +59,7 @@
 
 - `caption.composition` / `caption.shotSize` / `caption.camera` 只能使用上方受控词表 id。
 - `sceneFit.moods` 必须至少 1 个，且只能使用上方 mood id。
-- `sceneFit.scenes` 必须至少 1 个，使用短中文场景词，不要写长句。
+- `sceneFit.scenes` 必须至少 1 个，只能使用上方 scene 受控标签，不要发明新场景词。
 - 每个 mood 至少覆盖 3 条模板。
 - 覆盖模块A 10 种构图；`bisect` 可作为补充，但不要替代模块A 10 构图。
 - `decisionHint` 要给 A2 做选择判断：写「什么时候选」「解决什么画面问题」，不要写诗化文案。

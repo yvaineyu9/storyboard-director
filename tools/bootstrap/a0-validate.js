@@ -9,7 +9,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CAMERA_MOVES, COMPOSITIONS, MOODS, SHOT_SIZES } from '../../lib/vocab.js';
-import { assertFigure } from '../../lib/figure.js';
+import { assertFigure, MODULE_A_COMPOSITIONS } from '../../lib/figure.js';
+import { SCENE_TAGS } from './a0-build.js';
 
 export const INTERMEDIATE_LIBRARY_URL = new URL('./storyboard-library.generated.json', import.meta.url);
 export const STATIC_LIBRARY_URL = new URL('../../lib/storyboard-library.js', import.meta.url);
@@ -60,6 +61,10 @@ function assertStringArray(value, path) {
   });
 }
 
+function assertSceneTag(value, path) {
+  assert(SCENE_TAGS.includes(value), `${path} must be a controlled scene tag`);
+}
+
 function validateTemplate(template, index, seenIds, moodCoverage, compositionCoverage, sceneSet) {
   assert(isPlainObject(template), `templates[${index}] must be an object`);
   assertExactTemplateKeys(template, index);
@@ -86,9 +91,12 @@ function validateTemplate(template, index, seenIds, moodCoverage, compositionCov
     moodCoverage.set(mood, (moodCoverage.get(mood) ?? 0) + 1);
   });
   template.sceneFit.scenes.forEach((scene) => sceneSet.add(scene));
+  template.sceneFit.scenes.forEach((scene) => assertSceneTag(scene, `${template.id}.sceneFit.scenes`));
 }
 
 export function normalizeLibrary(library) {
+  validateLibrary(library);
+
   assert(isPlainObject(library), 'library must be an object');
   assert(Array.isArray(library.templates), 'library.templates must be an array');
   return {
@@ -139,8 +147,7 @@ export function validateLibrary(library) {
     );
   }
 
-  const moduleACompositions = ['center', 'thirds', 'symmetry', 'vast', 'frame', 'leading', 'lowangle', 'topdown', 'silhouette', 'shallow'];
-  for (const composition of moduleACompositions) {
+  for (const composition of MODULE_A_COMPOSITIONS) {
     assert((compositionCoverage.get(composition) ?? 0) >= 1, `composition ${composition} must be covered`);
   }
 
@@ -156,7 +163,7 @@ export function validateLibrary(library) {
 
 export async function readIntermediateLibrary(inputPath = INTERMEDIATE_LIBRARY_PATH) {
   const text = await readFile(inputPath, 'utf8');
-  return normalizeLibrary(JSON.parse(text));
+  return JSON.parse(text);
 }
 
 export function toStaticModuleSource(library) {
@@ -177,7 +184,7 @@ export async function writeStaticLibraryModule(library, outputPath = STATIC_LIBR
 export async function validateStaticLibraryModule(modulePath = STATIC_LIBRARY_PATH) {
   const moduleUrl = `${pathToFileURL(modulePath).href}?validate=${Date.now()}`;
   const { STORYBOARD_LIBRARY } = await import(moduleUrl);
-  return validateLibrary(normalizeLibrary(STORYBOARD_LIBRARY));
+  return validateLibrary(STORYBOARD_LIBRARY);
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
