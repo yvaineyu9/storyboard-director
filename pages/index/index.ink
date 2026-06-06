@@ -5,12 +5,15 @@
 </script>
 
 <script setup>
-// T08：UI 状态机骨架 + 语音管线。
-// 状态机壳 + SpeechRecognition 全生命周期已落地；真实 Agent 编排（A1→[A2‖A3]→A4）、
-// Canvas 胶片条绘制、死模板库/词表均为 stub，留待后续任务（T13 Canvas / T14 Agent）。
-//
-// 注意（范围限制）：本文件刻意不 import lib 下尚未实现的 stub（vocab/agents/renderer）。
-// 语言模型相关 import 也暂不引入（runAgent 留 mock）。
+import { LanguageModel } from 'language-model';
+import wx from 'wx';
+import { MAX_CLARIFY, createIntentSession, runIntent } from '../../lib/agents/intent.js';
+import { fallbackComposition, runComposition } from '../../lib/agents/composition.js';
+import { buildFallbackRhythm, runRhythm } from '../../lib/agents/rhythm.js';
+import { combineStoryboard } from '../../lib/agents/combine.js';
+import { drawFilmstrip } from '../../lib/renderer/filmstrip.js';
+
+// T14：A1→[A2‖A3]→A4→streamdown/canvas 编排接线。
 
 // 六态总览：idle | listening | clarifying | analyzing | result | error
 // analyzing 子阶段：intent | parallel | combine
@@ -77,13 +80,14 @@ export default {
     displayQuery: '',          // listening 实时转写
 
     // —— clarifying（追问）——
-    ask: '',                   // A1 追问话术；T14 前用占位
+    ask: '',                   // A1 追问话术
 
     // —— result（结果）——
-    markdown: '',              // <streamdown> 卡片内容；T14 前用 mock 转写占位
+    markdown: '',              // <streamdown> 卡片内容
     isStreaming: false,
-    filmstripCells: [],        // Canvas 胶片条数据占位（T13 才真正绘制）
-    guidance: [],              // 逐镜指引列表占位
+    filmstripCells: [],        // Canvas 胶片条模型 cells
+    filmstripFailed: false,    // Canvas 失败时隐藏胶片条，保留 Markdown 文字版
+    guidance: [],              // 逐镜指引列表
 
     // —— error ——
     errorText: '',
@@ -150,6 +154,12 @@ export default {
       return;
     }
 
+    const isClarifyFollowup = this.data.phase === 'clarifying';
+    if (!isClarifyFollowup) {
+      this.resetAgentState();
+    }
+    this._isClarifyFollowup = isClarifyFollowup;
+
     this.disposeRecognition();
     this._finalText = '';
 
@@ -203,10 +213,11 @@ export default {
       this._recognition = recognition;
       this.setPhase('listening', {
         displayQuery: '',
-        ask: '',
+        ask: isClarifyFollowup ? this.data.ask : '',
         markdown: '',
         errorText: '',
         isStreaming: false,
+        filmstripFailed: false,
         filmstripCells: [],
         guidance: []
       });
@@ -228,62 +239,169 @@ export default {
   },
 
   // 拿到 ASR final 文本后的编排入口。
-  // T14 前为 mock：不调真实 A1–A4，直接把转写塞进 result 占位展示。
   async runAgent(query) {
-    // TODO(T14): 接入 A1→[A2‖A3]→A4 真实流水线。
-    //   1) setPhase('analyzing') + setStage('intent')，调 A1 意图分析（含追问循环）。
-    //      A1 ready=false → setPhase('clarifying', { ask })，按钮回 listening 回灌同一会话（≤2 轮）。
-    //   2) ready=true → setStage('parallel')，Promise.allSettled([A2 构图, A3 节奏])。
-    //   3) setStage('combine')，A4 纯 JS 组合 → board。
-    //   4) setPhase('result', { markdown: buildMarkdown(board),
-    //        filmstripCells: filmstripModel.cells, guidance: board.guidance })，
-    //      并在 result 渲染帧后由 T13 渲染器绘制 <canvas id="filmstrip">。
-    //   能力降级见架构设计 §6.2（LanguageModel.availability、单路失败回退等）。
+    const runId = (this._runId || 0) + 1;
+    this._runId = runId;
+    if (!this._intentInputs) this._intentInputs = [];
+    this._intentInputs.push(query);
 
-    // —— 以下为 T08 mock 串通：idle↔listening↔(mock)result 走通即可 ——
-    const mockMarkdown = [
-      '## 分镜（占位）',
-      '',
-      '> 真实分镜流水线（A1→[A2‖A3]→A4）尚未接入（T14）。',
-      '',
-      '**你说的画面：**',
-      '',
-      query,
-      '',
-      '- 情绪基调：占位',
-      '- 分镜数量：占位（3~6）',
-      '- 模板编号：占位'
-    ].join('\n');
-
-    this.setPhase('result', {
+    this.setPhase('analyzing', {
       displayQuery: query,
-      markdown: mockMarkdown,
-      isStreaming: false,
-      errorText: '',
+      markdown: '',
       ask: '',
-      // 占位胶片条数据（不绘制 Canvas，T13 才接渲染器）。
-      filmstripCells: [
-        { index: 1 },
-        { index: 2 },
-        { index: 3 }
-      ],
-      // 占位逐镜指引（T14 由 A4 buildGuidance 产出）。
-      guidance: [
-        '镜1 · 指引占位：景别/构图/运镜/时长/转场（T14 接入）',
-        '镜2 · 指引占位：景别/构图/运镜/时长/转场（T14 接入）',
-        '镜3 · 指引占位：景别/构图/运镜/时长/转场（T14 接入）'
-      ]
+      errorText: '',
+      isStreaming: false,
+      filmstripFailed: false,
+      filmstripCells: [],
+      guidance: []
     });
+    this.setStage('intent');
 
-    // TODO(T13): 切到 result 态、节点挂载后调用胶片条渲染器
-    //   wx.createCanvasContext('filmstrip') → drawFilmstrip(filmstripModel)（两色写死 #000/#40FF5E）。
+    try {
+      const availability = await LanguageModel.availability();
+      if (this._runId !== runId) return;
+      if (availability !== 'available') {
+        this.setPhase('error', { isStreaming: false, errorText: 'AI 运行时暂不可用' });
+        this.disposeSession();
+        return;
+      }
+
+      let intentSession = this._intentSession;
+      if (!intentSession) {
+        intentSession = await createIntentSession(LanguageModel, {
+          onSession: (session) => this.trackSession(session)
+        });
+        if (this._runId !== runId) {
+          this.releaseSession(intentSession);
+          if (intentSession && typeof intentSession.destroy === 'function') {
+            intentSession.destroy();
+          }
+          return;
+        }
+        this._intentSession = intentSession;
+      }
+
+      if (this._runId !== runId) return;
+      const intentText = (this._intentInputs || [])
+        .map((text, index) => `${index === 0 ? '初始描述' : `补充${index}`}：${text}`)
+        .join('\n');
+      const intentResult = await runIntent(intentText, {
+        session: intentSession,
+        clarifyCount: this._clarifyCount || 0
+      });
+      if (this._runId !== runId) return;
+
+      if (!intentResult.ready && (this._clarifyCount || 0) < MAX_CLARIFY) {
+        this._clarifyCount = (this._clarifyCount || 0) + 1;
+        this.setPhase('clarifying', {
+          ask: intentResult.ask,
+          markdown: intentResult.ask,
+          isStreaming: false,
+          errorText: ''
+        });
+        return;
+      }
+
+      const intent = intentResult.intent;
+      this.disposeIntentSession();
+      this.setStage('parallel');
+
+      const [compositionSettled, rhythmSettled] = await Promise.allSettled([
+        runComposition(intent, {
+          LanguageModel,
+          onSession: (session) => this.trackSession(session)
+        }),
+        runRhythm({ mood: intent.mood, shotCount: intent.shotCount }, {
+          LanguageModel,
+          onSession: (session) => this.trackSession(session)
+        })
+      ]);
+      if (this._runId !== runId) return;
+
+      const composition = compositionSettled.status === 'fulfilled'
+        ? compositionSettled.value
+        : fallbackComposition(intent);
+      const rhythm = rhythmSettled.status === 'fulfilled'
+        ? rhythmSettled.value
+        : { shots: buildFallbackRhythm(intent.mood, intent.shotCount), source: 'fallback' };
+
+      this.setStage('combine');
+      const board = combineStoryboard(intent, composition, rhythm);
+      this._latestFilmstripModel = board.filmstripModel;
+      this.setPhase('result', {
+        displayQuery: query,
+        markdown: board.markdown,
+        isStreaming: false,
+        errorText: '',
+        ask: '',
+        filmstripFailed: false,
+        filmstripCells: board.filmstripModel.cells,
+        guidance: board.guidance
+      });
+      this.clearConversationState();
+      this.renderFilmstrip(board.filmstripModel, runId);
+    } catch (error) {
+      console.error('Storyboard orchestration failed', error);
+      if (this._runId === runId) {
+        this.disposeSession();
+        this.setPhase('error', { isStreaming: false, errorText: '出了点问题，请重试' });
+      }
+    }
   },
 
-  // 取消分析（analyzing 态点按钮）。T14 接入后需 destroy 在途会话。
+  async renderFilmstrip(model, runId) {
+    const result = await drawFilmstrip(model, { wxImpl: wx });
+    if (this._runId !== runId || this.data.phase !== 'result') return;
+    if (!result.ok) {
+      this.setData({ filmstripFailed: true });
+    }
+  },
+
+  // 取消分析（analyzing 态点按钮）。
   cancelAgent() {
-    // TODO(T14): destroy 在途的 A1/A2/A3 LanguageModel 会话。
+    this._runId = (this._runId || 0) + 1;
     this.disposeSession();
     this.setPhase('idle', { isStreaming: false });
+  },
+
+  trackSession(session) {
+    if (!session) return () => {};
+    if (!this._sessions) this._sessions = [];
+    if (!this._sessions.includes(session)) {
+      this._sessions.push(session);
+    }
+    return () => this.releaseSession(session);
+  },
+
+  releaseSession(session) {
+    if (!this._sessions) return;
+    this._sessions = this._sessions.filter((item) => item !== session);
+  },
+
+  disposeIntentSession() {
+    const session = this._intentSession;
+    this._intentSession = null;
+    this.releaseSession(session);
+    if (session && typeof session.destroy === 'function') {
+      try {
+        session.destroy();
+      } catch (error) {
+        console.error('intent session destroy failed', error);
+      }
+    }
+  },
+
+  clearConversationState() {
+    this._intentInputs = [];
+    this._clarifyCount = 0;
+    this._isClarifyFollowup = false;
+  },
+
+  resetAgentState() {
+    this._runId = (this._runId || 0) + 1;
+    this.disposeSession();
+    this.clearConversationState();
+    this._latestFilmstripModel = null;
   },
 
   disposeRecognition() {
@@ -297,15 +415,17 @@ export default {
   },
 
   disposeSession() {
-    // TODO(T14): 真实接入后，遍历销毁 A1/A2/A3 会话实例。
-    if (this._session) {
+    const sessions = this._sessions || [];
+    for (const session of sessions) {
       try {
-        this._session.destroy();
+        if (session && typeof session.destroy === 'function') session.destroy();
       } catch (error) {
         console.error('session.destroy() failed', error);
       }
-      this._session = null;
     }
+    this._sessions = [];
+    this._intentSession = null;
+    this.clearConversationState();
   },
 
   teardown() {
@@ -342,7 +462,7 @@ export default {
           <text class="query-text">{{displayQuery}}</text>
         </view>
 
-        <!-- clarifying：A1 追问 + 补充按钮（ask 占位，T14 接入真实话术） -->
+        <!-- clarifying：A1 追问 + 补充按钮 -->
         <view class="clarify" ink:if="{{phase === 'clarifying'}}">
           <streamdown class="ask" content="{{ask}}"></streamdown>
           <button class="ghost-btn" bindtap="onMicTap">补充说明</button>
@@ -369,12 +489,13 @@ export default {
         <view class="result" ink:if="{{phase === 'result'}}">
           <streamdown class="markdown" content="{{markdown}}" streaming="{{isStreaming}}"></streamdown>
 
-          <!-- 胶片条：单 canvas 放进横向 scroll-view（T13 才真正绘制） -->
-          <scroll-view scroll-x class="filmstrip-scroll">
+          <!-- 胶片条：单 canvas 放进横向 scroll-view -->
+          <scroll-view scroll-x class="filmstrip-scroll" ink:if="{{filmstripFailed === false}}">
             <canvas id="filmstrip" class="filmstrip" canvas-id="filmstrip"></canvas>
           </scroll-view>
+          <text class="filmstrip-fallback" ink:if="{{filmstripFailed}}">胶片条绘制不可用，已保留文字版分镜。</text>
 
-          <!-- 逐镜指引列表（占位数据） -->
+          <!-- 逐镜指引列表 -->
           <view class="guidance" ink:if="{{guidance.length}}">
             <text class="guidance-title">分镜指引</text>
             <view class="guidance-item" ink:for="{{guidance}}" ink:key="index">
@@ -569,9 +690,15 @@ export default {
 }
 
 .filmstrip {
-  /* 固定最大 backing：6 镜上限 ≈ 894×180（架构设计 §4.1）；T13 才绘制 */
+  /* 固定最大 backing：6 镜上限 ≈ 894×180（架构设计 §4.1） */
   width: 894px;
   height: 180px;
+}
+
+.filmstrip-fallback {
+  color: var(--color-text-secondary, #aaaaaa);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .guidance {
