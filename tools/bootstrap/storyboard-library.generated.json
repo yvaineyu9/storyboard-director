@@ -1,7 +1,4 @@
-// T05 · 死模板库静态模块。由 A0 离线中间 JSON 生成。
-// 生产运行时只 import 本模块，不读取 JSON 文件，不依赖离线生成器。
-
-export const STORYBOARD_LIBRARY = {
+{
   "schemaVersion": 1,
   "generatedBy": "A0-bootstrap-handwritten-v1",
   "palette": {
@@ -2124,4 +2121,4 @@ export const STORYBOARD_LIBRARY = {
       }
     }
   ]
-};
+}
